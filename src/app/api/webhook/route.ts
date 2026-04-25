@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, getStripeMode } from "@/lib/stripe";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { env } from "@/lib/env";
 import { sendOrderReceiptEmail } from "@/lib/email";
@@ -45,13 +45,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Bad signature: ${msg}` }, { status: 400 });
   }
 
+  const mode = getStripeMode();
+  const eventLivemode = event.livemode ? "live" : "test";
+  if (mode !== "unknown" && eventLivemode !== mode) {
+    // We accepted the signature (so the secret matches), but the event came
+    // from a different Stripe environment than our keys claim. This usually
+    // means STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET were copied from
+    // different modes. Log loudly so it shows up in Vercel logs.
+    console.warn(
+      `[webhook] mode mismatch: event=${eventLivemode} secret_key=${mode} (id=${event.id})`,
+    );
+  }
+
   try {
+    console.log(
+      `[webhook] received ${event.type} id=${event.id} livemode=${event.livemode}`,
+    );
     if (event.type === "checkout.session.completed") {
       await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
     }
     return NextResponse.json({ received: true });
   } catch (err) {
-    console.error("[webhook] handler error:", err);
+    console.error(`[webhook] handler error (event ${event.id}):`, err);
     const msg = err instanceof Error ? err.message : "Handler error";
     return NextResponse.json({ error: msg }, { status: 500 });
   }
