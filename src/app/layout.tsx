@@ -6,13 +6,26 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { CartProvider } from "@/context/CartContext";
 import { Toaster } from "@/components/Toaster";
+import { env } from "@/lib/env";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Digital Store — Premium digital products, delivered instantly",
+  metadataBase: new URL(env.siteUrl),
+  title: {
+    default: "Digital Store — Premium digital products, delivered instantly",
+    template: "%s · Digital Store",
+  },
   description:
     "Buy premium digital products — templates, ebooks, UI kits and more. Instant download after purchase, re-download anytime.",
+  openGraph: {
+    type: "website",
+    siteName: "Digital Store",
+    url: env.siteUrl,
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
 };
 
 export default function RootLayout({
