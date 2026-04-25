@@ -12,6 +12,37 @@ type SendReceiptArgs = {
 };
 
 /**
+ * Domains that should never appear in `from` in production. They are
+ * either obvious placeholders left in `.env.local` or the Resend sandbox
+ * sender (which is allowed in dev/preview but rate-limited and not
+ * suitable for real customer mail).
+ */
+const PLACEHOLDER_FROM_PATTERNS = [
+  /@example\.com>?\s*$/i,
+  /@yourdomain\.com>?\s*$/i,
+  /@change\.me>?\s*$/i,
+];
+
+function assertProductionFrom(from: string): void {
+  if (process.env.NODE_ENV !== "production") return;
+  for (const re of PLACEHOLDER_FROM_PATTERNS) {
+    if (re.test(from)) {
+      console.warn(
+        `[email] EMAIL_FROM ("${from}") still uses a placeholder domain. ` +
+          `Set EMAIL_FROM to a sender on a Resend-verified domain before going live.`,
+      );
+      return;
+    }
+  }
+  if (/@resend\.dev>?\s*$/i.test(from)) {
+    console.warn(
+      `[email] EMAIL_FROM ("${from}") is the Resend sandbox sender. ` +
+        `It works for testing but is rate-limited and not recommended for production.`,
+    );
+  }
+}
+
+/**
  * Sends a purchase confirmation email.
  * If RESEND_API_KEY is not configured, logs a warning and returns
  * { skipped: true } so local dev still works without Resend.
@@ -23,6 +54,8 @@ export async function sendOrderReceiptEmail(args: SendReceiptArgs) {
     );
     return { skipped: true as const };
   }
+
+  assertProductionFrom(env.emailFrom);
 
   const resend = new Resend(env.resendApiKey);
   const total = new Intl.NumberFormat("en-US", {

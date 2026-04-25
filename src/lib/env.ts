@@ -39,7 +39,11 @@ export const env = {
   stripeWebhookSecret: read("STRIPE_WEBHOOK_SECRET"),
 
   resendApiKey: read("RESEND_API_KEY"),
-  emailFrom: read("EMAIL_FROM", "Digital Store <noreply@example.com>"),
+  // Default to Resend's official sandbox sender so dev / preview deploys
+  // can send mail without a verified domain. In production, set EMAIL_FROM
+  // to a sender on a domain you have verified in Resend
+  // (e.g. `Digital Store <orders@yourdomain.com>`).
+  emailFrom: read("EMAIL_FROM", "Digital Store <onboarding@resend.dev>"),
 
   adminEmails: read("ADMIN_EMAILS")
     .split(",")
