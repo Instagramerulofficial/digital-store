@@ -9,7 +9,8 @@ import {
 } from "@/types/db";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+// Hobby plan caps at 60s; raise to 120 on Pro.
+export const maxDuration = 60;
 
 /**
  * POST /api/admin/agent/generate

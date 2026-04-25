@@ -26,8 +26,21 @@ const PUBLIC_SUPABASE_ANON_KEY =
 const PUBLIC_STRIPE_PUBLISHABLE_KEY =
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 
+/**
+ * Normalise NEXT_PUBLIC_SITE_URL so the app never crashes on
+ * `new URL(env.siteUrl)` because of a missing protocol or trailing
+ * slash. Empty value falls back to localhost dev.
+ */
+function normaliseSiteUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return "http://localhost:3000";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  // Bare host like "example.com" or "app.vercel.app" -> assume https.
+  return `https://${trimmed}`;
+}
+
 export const env = {
-  siteUrl: PUBLIC_SITE_URL.replace(/\/$/, "") || "http://localhost:3000",
+  siteUrl: normaliseSiteUrl(PUBLIC_SITE_URL),
 
   supabaseUrl: PUBLIC_SUPABASE_URL,
   supabaseAnonKey: PUBLIC_SUPABASE_ANON_KEY,

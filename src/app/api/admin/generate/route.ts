@@ -11,7 +11,8 @@ import {
 } from "@/types/db";
 
 export const runtime = "nodejs";
-export const maxDuration = 120; // AI call can take a while
+// AI call can take a while. Hobby plan caps at 60s; raise to 120 on Pro.
+export const maxDuration = 60;
 
 const ALLOWED_TONES: readonly Tone[] = [
   "expert",

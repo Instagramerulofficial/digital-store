@@ -10,7 +10,9 @@ import type {
 } from "@/types/db";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+// Vercel Hobby plan caps serverless functions at 60s.
+// On Pro this can safely go up to 300.
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 /**
