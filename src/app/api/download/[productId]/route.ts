@@ -1,23 +1,51 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { assertProductsBucketIsPrivate } from "@/lib/supabase/storage";
 import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
-// Signed-URL TTL in seconds.
-// The link expires 24 hours after it is issued, so a customer who opens the
-// email a few hours later still gets a working download.
-const SIGNED_URL_TTL = 60 * 60 * 24;
+/**
+ * Signed-URL TTL in seconds.
+ *
+ * Kept intentionally short (5 min). The browser follows the 302
+ * redirect immediately, so the URL only needs to survive the redirect
+ * + the start of the actual file transfer. A short TTL drastically
+ * narrows the "share the link with a friend" abuse window without
+ * affecting any legitimate flow:
+ *
+ *   - Email links point at THIS endpoint (not at the signed URL),
+ *     so the buyer always gets a fresh URL the moment they click.
+ *   - Re-downloading from the dashboard generates a new URL every
+ *     time as well.
+ */
+const SIGNED_URL_TTL = 5 * 60;
+
+/**
+ * Soft cap on per-purchase downloads. Acts as a tripwire against
+ * credential / link sharing rather than as a hard quota for honest
+ * users. Tunable via NEXT env in the future if needed.
+ */
+const MAX_DOWNLOADS_PER_PURCHASE = 100;
 
 /**
  * Secure file download.
- * Flow:
- *   1. Require authenticated user (Supabase SSR cookies).
- *   2. Verify a row exists in `purchases` for (user_id, product_id).
- *   3. Create a short-lived signed URL against the PRIVATE storage bucket.
- *   4. Bump the download audit counter.
- *   5. Redirect the browser to the signed URL.
+ *
+ * Pipeline:
+ *   1. Defense-in-depth: confirm the products bucket is still
+ *      configured as PRIVATE (refuses to serve otherwise).
+ *   2. Require an authenticated user (Supabase SSR cookies).
+ *   3. Confirm a `purchases` row exists for (user_id, product_id) —
+ *      this row is only ever inserted by the Stripe webhook after a
+ *      verified `checkout.session.completed` event.
+ *   4. Reject if the per-purchase download cap has been reached.
+ *   5. Mint a short-lived signed URL via the service-role admin
+ *      client (the only code path with READ access to file_path).
+ *   6. Bump the download counter + append a row to the `downloads`
+ *      audit table.
+ *   7. Redirect the browser to the signed URL.
  */
 export async function GET(
   request: Request,
@@ -25,11 +53,21 @@ export async function GET(
 ) {
   const { productId } = await params;
 
+  // 1. Bucket privacy guard
+  const privacy = await assertProductsBucketIsPrivate();
+  if (!privacy.ok) {
+    console.error("[download] BUCKET MISCONFIGURED:", privacy.reason);
+    return NextResponse.json(
+      { error: "Downloads are temporarily unavailable." },
+      { status: 503 },
+    );
+  }
+
+  // 2. Auth
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
   if (!user) {
     return NextResponse.json(
       { error: "You must be signed in to download." },
@@ -39,6 +77,7 @@ export async function GET(
 
   const admin = createSupabaseAdminClient();
 
+  // 3. Paid-order verification (purchases row = proof of paid grant)
   const { data: grant, error: grantErr } = await admin
     .from("purchases")
     .select("id, download_count")
@@ -56,6 +95,23 @@ export async function GET(
     );
   }
 
+  // 4. Soft per-purchase cap
+  if (grant.download_count >= MAX_DOWNLOADS_PER_PURCHASE) {
+    console.warn(
+      `[download] cap hit user=${user.id} product=${productId} count=${grant.download_count}`,
+    );
+    return NextResponse.json(
+      {
+        error:
+          "Download limit reached for this product. Please contact support.",
+      },
+      { status: 429 },
+    );
+  }
+
+  // 5. Look up the storage path. Must use the service-role admin
+  // client because column-level SELECT on `file_path` is revoked
+  // from anon + authenticated (see migration 0004).
   const { data: product, error: prodErr } = await admin
     .from("products")
     .select("id, file_path, file_name")
@@ -63,6 +119,15 @@ export async function GET(
     .maybeSingle();
   if (prodErr || !product) {
     return NextResponse.json({ error: "Product not found" }, { status: 404 });
+  }
+  if (!product.file_path || product.file_path === "pending") {
+    console.error(
+      `[download] product ${productId} has no file_path uploaded yet`,
+    );
+    return NextResponse.json(
+      { error: "This product is not ready for download yet." },
+      { status: 503 },
+    );
   }
 
   const { data: signed, error: signErr } = await admin.storage
@@ -78,27 +143,29 @@ export async function GET(
     );
   }
 
-  await admin
-    .from("purchases")
-    .update({
-      download_count: grant.download_count + 1,
-      last_downloaded_at: new Date().toISOString(),
-    })
-    .eq("id", grant.id);
-
-  // Append an immutable audit entry for analytics / abuse detection.
+  // 6. Audit + counter bump (best-effort — never block the redirect)
   const hdrs = request.headers;
   const ip =
     hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     hdrs.get("x-real-ip") ||
     null;
-  await admin.from("downloads").insert({
-    user_id: user.id,
-    product_id: productId,
-    purchase_id: grant.id,
-    ip,
-    user_agent: hdrs.get("user-agent"),
-  });
+
+  await Promise.allSettled([
+    admin
+      .from("purchases")
+      .update({
+        download_count: grant.download_count + 1,
+        last_downloaded_at: new Date().toISOString(),
+      })
+      .eq("id", grant.id),
+    admin.from("downloads").insert({
+      user_id: user.id,
+      product_id: productId,
+      purchase_id: grant.id,
+      ip,
+      user_agent: hdrs.get("user-agent"),
+    }),
+  ]);
 
   return NextResponse.redirect(signed.signedUrl);
 }

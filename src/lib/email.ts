@@ -46,8 +46,8 @@ export async function sendOrderReceiptEmail(args: SendReceiptArgs) {
       <h2 style="font-size:16px;margin-top:24px;">Your downloads</h2>
       <ul style="padding-left:18px;">${downloadsHtml}</ul>
       <p style="color:#888;font-size:12px;margin-top:24px;">
-        These links are personal and valid for <strong>24 hours</strong>.
-        After that, sign in to your dashboard to generate fresh ones:
+        These links are tied to your account — sign in to download.
+        You can re-download any time from your dashboard:
         <a href="${env.siteUrl}/dashboard" style="color:#7c3aed;">${env.siteUrl}/dashboard</a>.
       </p>
     </div>

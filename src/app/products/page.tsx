@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ProductCard from "@/components/ProductCard";
+import { PUBLIC_PRODUCT_COLUMNS } from "@/lib/products/columns";
 import type { Product } from "@/types/db";
 import ProductsFilters from "./ProductsFilters";
 
@@ -27,7 +28,10 @@ export default async function ProductsPage({
 
   const supabase = await createSupabaseServerClient();
 
-  let query = supabase.from("products").select("*").eq("is_published", true);
+  let query = supabase
+    .from("products")
+    .select(PUBLIC_PRODUCT_COLUMNS)
+    .eq("is_published", true);
 
   if (q) {
     // Strip PostgREST filter-syntax specials so user input can't break `.or()`.
@@ -52,7 +56,7 @@ export default async function ProductsPage({
   }
 
   const { data, error } = await query;
-  const products = (data as Product[] | null) ?? [];
+  const products = (data as unknown as Product[] | null) ?? [];
 
   const { data: catData } = await supabase
     .from("products")

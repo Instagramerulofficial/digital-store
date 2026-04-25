@@ -5,6 +5,7 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { formatBytes, formatPrice } from "@/lib/utils";
 import ProductCard from "@/components/ProductCard";
 import AddToCartButton from "./AddToCartButton";
+import { PUBLIC_PRODUCT_COLUMNS } from "@/lib/products/columns";
 import type { Product } from "@/types/db";
 
 export const revalidate = 30;
@@ -19,35 +20,35 @@ export default async function ProductDetailPage({
 
   const { data } = await supabase
     .from("products")
-    .select("*")
+    .select(PUBLIC_PRODUCT_COLUMNS)
     .eq("slug", slug)
     .eq("is_published", true)
     .maybeSingle();
 
   if (!data) notFound();
-  const product = data as Product;
+  const product = data as unknown as Product;
 
   // Related products: same category, excluding the current one.
   let related: Product[] = [];
   if (product.category) {
     const { data: rel } = await supabase
       .from("products")
-      .select("*")
+      .select(PUBLIC_PRODUCT_COLUMNS)
       .eq("is_published", true)
       .eq("category", product.category)
       .neq("id", product.id)
       .limit(3);
-    related = (rel as Product[] | null) ?? [];
+    related = (rel as unknown as Product[] | null) ?? [];
   }
   if (related.length === 0) {
     const { data: rel } = await supabase
       .from("products")
-      .select("*")
+      .select(PUBLIC_PRODUCT_COLUMNS)
       .eq("is_published", true)
       .neq("id", product.id)
       .order("created_at", { ascending: false })
       .limit(3);
-    related = (rel as Product[] | null) ?? [];
+    related = (rel as unknown as Product[] | null) ?? [];
   }
 
   return (

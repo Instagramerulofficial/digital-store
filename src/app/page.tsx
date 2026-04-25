@@ -3,6 +3,7 @@ import { ArrowRight, Download, ShieldCheck, Zap } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import ProductCard from "@/components/ProductCard";
 import NewsletterSubscribe from "@/components/NewsletterSubscribe";
+import { PUBLIC_PRODUCT_COLUMNS } from "@/lib/products/columns";
 import type { Product } from "@/types/db";
 
 export const revalidate = 30;
@@ -13,7 +14,7 @@ export default async function HomePage() {
   const [{ data: featured }, { data: categoryRows }] = await Promise.all([
     supabase
       .from("products")
-      .select("*")
+      .select(PUBLIC_PRODUCT_COLUMNS)
       .eq("is_published", true)
       .order("created_at", { ascending: false })
       .limit(6),
@@ -24,7 +25,7 @@ export default async function HomePage() {
       .not("category", "is", null),
   ]);
 
-  const products = (featured as Product[] | null) ?? [];
+  const products = (featured as unknown as Product[] | null) ?? [];
 
   const categoryCounts = new Map<string, number>();
   for (const row of categoryRows ?? []) {
